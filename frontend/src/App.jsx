@@ -10,15 +10,30 @@ function App() {
   const [jobTitle, setJobTitle] = useState("");
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
+  const [message, setMessage] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loadingJobs, setLoadingJobs] = useState(false);
+  const [loadingDelete, setLoadingDelete] = useState(false);
+  const [loadingUpdate, setLoadingUpdate] = useState(false);
 
   useEffect(() => {
-    checkUser();
+    // Get current session on load
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null);
+    });
+  
+    // Listen for auth changes (login, logout, refresh)
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
+  
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
-
-  const checkUser = async () => {
-    const { data } = await supabase.auth.getUser();
-    setUser(data.user);
-  };
 
   const signUp = async () => {
     const { error } = await supabase.auth.signUp({
@@ -26,8 +41,11 @@ function App() {
       password,
     });
 
-    if (error) alert(error.message);
-    else alert("Signup successful 🎉");
+    if (error) {
+      setErrorMsg(error.message);
+    } else {
+      setMessage("Signup successful, Check your email.");
+    }
   };
 
   const login = async () => {
@@ -36,9 +54,10 @@ function App() {
       password,
     });
 
-    if (error) alert(error.message);
-    else {
-      alert("Login successful ✅");
+    if (error) {
+      setErrorMsg(error.message);
+    } else {
+      setMessage("Login successful");
       checkUser();
     }
   };
@@ -49,50 +68,130 @@ function App() {
     setJobs([]);
   };
 
-  const fetchJobs = async (userId) => {
+  const fetchJobs = async () => {
     try {
-      const response = await fetch(
-        `http://localhost:5000/api/jobs/${userId}`
-      );
+      setLoadingJobs(true);
+      setErrorMsg("");
+  
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+  
+      const response = await fetch("http://localhost:5000/api/jobs", {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+  
+      if (!response.ok) throw new Error("Failed to fetch jobs");
+  
       const data = await response.json();
       setJobs(data);
-    } catch (error) {
-      console.error("Fetch jobs error:", error);
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoadingJobs(false);
     }
   };
 
   const handleAddJob = async () => {
     if (!jobTitle) return;
   
-    await fetch("http://localhost:5000/api/jobs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: jobTitle,
-        user_id: user.id,
-      }),
-    });
+    try {
+      setLoading(true);
+      setErrorMsg("");
+      setMessage("");
   
-    setJobTitle("");
-    fetchJobs(user.id);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+  
+      const response = await fetch("http://localhost:5000/api/jobs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          title: jobTitle,
+        }),
+      });
+  
+      if (!response.ok) throw new Error("Failed to add job");
+  
+      setMessage("Job added successfully");
+      setJobTitle("");
+      fetchJobs();
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
+  
 
   const handleDelete = async (jobId) => {
-    await fetch(`http://localhost:5000/api/jobs/${jobId}`, {
-      method: "DELETE",
-    });
+    try {
+      setLoadingDelete(true);
+      setErrorMsg("");
+      setMessage("");
   
-    fetchJobs(user.id);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+  
+      const response = await fetch(
+        `http://localhost:5000/api/jobs/${jobId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      );
+  
+      if (!response.ok) throw new Error("Failed to delete job");
+  
+      setMessage("Job deleted successfully");
+      fetchJobs();
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoadingDelete(false);
+    }
   };
 
   const handleStatusChange = async (jobId, newStatus) => {
-    await fetch(`http://localhost:5000/api/jobs/${jobId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus }),
-    });
+    try {
+      setLoadingUpdate(true);
+      setErrorMsg("");
+      setMessage("");
   
-    fetchJobs(user.id);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+  
+      const response = await fetch(
+        `http://localhost:5000/api/jobs/${jobId}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+  
+      if (!response.ok) throw new Error("Failed to update status");
+  
+      setMessage("Status updated");
+      fetchJobs();
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoadingUpdate(false);
+    }
   };
 
   const filteredJobs = jobs.filter((job) => {
@@ -155,6 +254,14 @@ function App() {
   return (
     <div className="container">
       <h2>Welcome {user.email}</h2>
+
+      {message && (
+        <div className="success-message">{message}</div>
+      )}
+
+      {errorMsg && (
+        <div className="error-message">{errorMsg}</div>
+      )}
 
       {/* 1 STATS SECTION */}
       <div style={{ marginBottom: "20px" }}>
@@ -225,15 +332,18 @@ function App() {
         <button
           className="primary"
           onClick={handleAddJob}
+          disabled={loading}
           style={{ marginLeft: "10px" }}
         >
-          Add Job
+          {loading ? "Adding..." : "Add Job"}
         </button>
       </div>
   
       <h3>Your Jobs</h3>
-  
-      {jobs.length === 0 && <p>No jobs added yet.</p>}
+      {loadingJobs && <p>Loading jobs...</p>}
+      {jobs.length === 0 && !loadingJobs && (
+        <p>No jobs added yet.</p>
+      )}
   
       {filteredJobs.map((job) => (
         <div key={job.id} className="job-item">
@@ -250,6 +360,7 @@ function App() {
               onChange={(e) =>
                 handleStatusChange(job.id, e.target.value)
               }
+              disabled={loadingUpdate}
               style={{ marginRight: "10px" }}
             >
               <option value="Applied">Applied</option>
@@ -260,9 +371,10 @@ function App() {
             <button
               className="danger"
               onClick={() => handleDelete(job.id)}
+              disabled={loadingDelete}
             >
-              Delete
-            </button>
+              {loadingDelete ? "Deleting..." : "Delete"}
+          </button>
           </div>
         </div>
       ))}

@@ -76,3 +76,19 @@ button.secondary {
   background: #fee2e2;
   color: #991b1b;
 }
+
+.success-message {
+  background: #dcfce7;
+  color: #166534;
+  padding: 10px;
+  margin-bottom: 15px;
+  border-radius: 6px;
+}
+
+.error-message {
+  background: #fee2e2;
+  color: #991b1b;
+  padding: 10px;
+  margin-bottom: 15px;
+  border-radius: 6px;
+}

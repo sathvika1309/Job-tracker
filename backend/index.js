@@ -10,13 +10,28 @@ const PORT = 5000;
 app.use(cors());
 app.use(express.json());
 
-// Test API route
-app.get("/api/test", (req, res) => {
-  res.json({ message: "Hello from backend!" });
-});
+const authenticateUser = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
 
-app.post("/api/jobs", async (req, res) => {
-  const { title, user_id } = req.body;
+  if (!authHeader) {
+    return res.status(401).json({ message: "No token provided" });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  const { data, error } = await supabase.auth.getUser(token);
+
+  if (error || !data.user) {
+    return res.status(401).json({ message: "Invalid token" });
+  }
+
+  req.user = data.user;
+  next();
+};
+
+app.post("/api/jobs", authenticateUser, async (req, res) => {
+  const { title } = req.body;
+  const user_id = req.user.id;
 
   const { data, error } = await supabase
     .from("jobs")
@@ -30,8 +45,8 @@ app.post("/api/jobs", async (req, res) => {
   res.json({ message: "Job saved for this user" });
 });
 
-app.get("/api/jobs/:user_id", async (req, res) => {
-  const { user_id } = req.params;
+app.get("/api/jobs", authenticateUser, async (req, res) => {
+  const user_id = req.user.id;
 
   const { data, error } = await supabase
     .from("jobs")
@@ -41,20 +56,21 @@ app.get("/api/jobs/:user_id", async (req, res) => {
 
   if (error) {
     console.error(error);
-    return res.status(500).json({ message: "Database error 😢" });
+    return res.status(500).json({ message: "Database error" });
   }
 
   res.json(data);
 });
 
 
-app.delete("/api/jobs/:id", async (req, res) => {
+app.delete("/api/jobs/:id", authenticateUser, async (req, res) => {
   const { id } = req.params;
 
   const { error } = await supabase
     .from("jobs")
     .delete()
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", req.user.id);
 
   if (error) {
     console.error(error);
@@ -68,14 +84,15 @@ app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 
-app.put("/api/jobs/:id", async (req, res) => {
+app.put("/api/jobs/:id", authenticateUser, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
   
   const { error } = await supabase
     .from("jobs")
     .update({ status })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", req.user.id);
   
   if (error) {
     console.error(error);
